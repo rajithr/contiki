@@ -385,10 +385,56 @@ uip_init(void)
 }
 /*---------------------------------------------------------------------------*/
 #if UIP_ACTIVE_OPEN
+struct uip_conn* 
+uip_get_conn()
+{
+  struct uip_conn *cconn, *conn;
+    
+  conn = 0;
+    
+  for(c = 0; c < UIP_CONNS; ++c) {
+    cconn = &uip_conns[c];
+    if(cconn->tcpstateflags == UIP_CLOSED) {
+      conn = cconn;
+      break;
+  }
+    if(cconn->tcpstateflags == UIP_TIME_WAIT) {
+      if(conn == 0 ||
+	 cconn->timer > conn->timer) {
+	conn = cconn;
+      }
+    }
+  }
+    
+  return conn;
+}
+
+void uip_conn_set_param(struct uip_conn *conn,uip_ipaddr_t *ripaddr, uint16_t rport)
+{
+  conn->tcpstateflags = UIP_SYN_SENT;
+
+  conn->snd_nxt[0] = iss[0];
+  conn->snd_nxt[1] = iss[1];
+  conn->snd_nxt[2] = iss[2];
+  conn->snd_nxt[3] = iss[3];
+
+  conn->initialmss = conn->mss = UIP_TCP_MSS;
+
+  conn->len = 1;   /* TCP length of the SYN is one. */
+  conn->nrtx = 0;
+  conn->timer = 1; /* Send the SYN next time around. */
+  conn->rto = UIP_RTO;
+  conn->sa = 0;
+  conn->sv = 16;   /* Initial value of the RTT variance. */
+  conn->lport = uip_htons(lastport);
+  conn->rport = rport;
+  uip_ipaddr_copy(&conn->ripaddr, ripaddr);  
+}
+
 struct uip_conn *
 uip_connect(uip_ipaddr_t *ripaddr, uint16_t rport)
 {
-  register struct uip_conn *conn, *cconn;
+  register struct uip_conn *conn;
 
   /* Find an unused local port. */
  again:
@@ -408,43 +454,13 @@ uip_connect(uip_ipaddr_t *ripaddr, uint16_t rport)
     }
   }
 
-  conn = 0;
-  for(c = 0; c < UIP_CONNS; ++c) {
-    cconn = &uip_conns[c];
-    if(cconn->tcpstateflags == UIP_CLOSED) {
-      conn = cconn;
-      break;
-    }
-    if(cconn->tcpstateflags == UIP_TIME_WAIT) {
-      if(conn == 0 ||
-	 cconn->timer > conn->timer) {
-	conn = cconn;
-      }
-    }
-  }
+  conn = uip_get_conn();
 
   if(conn == 0) {
     return 0;
   }
 
-  conn->tcpstateflags = UIP_SYN_SENT;
-
-  conn->snd_nxt[0] = iss[0];
-  conn->snd_nxt[1] = iss[1];
-  conn->snd_nxt[2] = iss[2];
-  conn->snd_nxt[3] = iss[3];
-
-  conn->initialmss = conn->mss = UIP_TCP_MSS;
-
-  conn->len = 1;   /* TCP length of the SYN is one. */
-  conn->nrtx = 0;
-  conn->timer = 1; /* Send the SYN next time around. */
-  conn->rto = UIP_RTO;
-  conn->sa = 0;
-  conn->sv = 16;   /* Initial value of the RTT variance. */
-  conn->lport = uip_htons(lastport);
-  conn->rport = rport;
-  uip_ipaddr_copy(&conn->ripaddr, ripaddr);
+  uip_conn_set_param(conn,ripaddr,rport);
 
   return conn;
 }
